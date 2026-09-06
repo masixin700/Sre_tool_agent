@@ -40,4 +40,8 @@
   - fix_device_config          修正设备配置（VLAN/DHCP Snooping/BGP/ACL 等）
   - rollback_config            回滚错误变更 / 恢复误删配置（如默认路由）
   - rollback_last_action       回滚工具：按快照撤销最近一次处置动作
+
+通知层 Notify 对外推送 / 只读外部副作用、不改变 NetBox 状态）
+  - send_notification 通过钉钉/飞书/企微群机器人推送消息（异常告警、人工确认/升级、闭环通报）。
+    
 """
