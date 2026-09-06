@@ -1,0 +1,4 @@
+{"ts": "2026-09-04T14:01:08", "type": "session_start", "netbox": "http://localhost:8000", "model": "deepseek-chat"}
+{"ts": "2026-09-04T14:01:08", "type": "user_input", "content": "fw-bj-01 先错后对测试"}
+{"ts": "2026-09-04T14:01:09", "type": "experience_recorded", "experience_id": "EXP-20260904-140109-09404f", "device": "fw-bj-01", "category": "cpu_process", "result": "closed"}
+{"ts": "2026-09-04T14:01:09", "type": "closed", "device": "fw-bj-01", "incidents": "[6]"}

@@ -1,0 +1,173 @@
+[
+  {
+    "id": "KB-LOOP-001",
+    "title": "二层环路 / MAC 地址漂移处置预案",
+    "category": "loop",
+    "action_tool": "shutdown_loop_port",
+    "tags": ["环路", "MAC漂移", "广播风暴", "STP", "loop", "终端掉线", "交换机"],
+    "symptoms": [
+      "MAC 地址表大范围漂移，同一 MAC 在多个端口间反复跳变",
+      "广播流量异常放大，交换机 CPU 升高",
+      "下联多台终端掉线、ARP 表异常",
+      "告警提示疑似环路"
+    ],
+    "remediation_steps": [
+      "在核心/接入交换机上 display mac-address 观察漂移端口，结合 LLDP/CDC 定位物理环路点",
+      "临时关闭环路端口（shutdown）阻断广播风暴，先恢复业务",
+      "拓扑恢复后下发环路防护配置（STP BPDU Guard / Loop Detection / storm-control）",
+      "根因复盘：检查下联交换机 STP 配置与私自接线"
+    ],
+    "historical_case": "2025-11 北京办公网：私接小交换机造成环路，MAC 表 30 秒内漂移 400+ 次，关闭 G0/0/24 后 2 分钟业务恢复，随后全网下发 BPDU Guard。"
+  },
+  {
+    "id": "KB-QOS-001",
+    "title": "端口 Microburst 丢包 / QoS 队列溢出处置预案",
+    "category": "microburst",
+    "action_tool": "adjust_buffer_queue",
+    "tags": ["Microburst", "丢包", "队列溢出", "QoS", "缓冲", "buffer", "视频卡顿", "拥塞"],
+    "symptoms": [
+      "下联多端口出现 Microburst 微突发丢包",
+      "QoS 队列溢出计数持续增长",
+      "视频会议/实时业务卡顿，平均带宽利用率却不高"
+    ],
+    "remediation_steps": [
+      "查看接口队列丢包计数与 burst 监控，确认拥塞队列与突发模式",
+      "调整端口缓冲分配（buffer）与 QoS 队列调度权重/深度",
+      "对实时业务队列优先调度，评估上行带宽扩容",
+      "观察 24 小时丢包计数是否归零"
+    ],
+    "historical_case": "2026-03 上海研发区：早会视频卡顿，平均带宽<40% 但队列持续溢出，调大 PQ 队列缓冲并调整 WRR 权重后丢包清零。"
+  },
+  {
+    "id": "KB-CPU-001",
+    "title": "网络设备管理平面 CPU 100% / 异常进程处置预案",
+    "category": "cpu_process",
+    "action_tool": "troubleshoot_process_restart",
+    "tags": ["CPU", "100%", "进程", "SSH登录失败", "管理平面", "重启", "Console", "防火墙"],
+    "symptoms": [
+      "管理平面 CPU 持续 100%，SSH/WEB 无法登录",
+      "带外监控显示异常进程占用 CPU",
+      "转发面业务尚正常，但管理失控"
+    ],
+    "remediation_steps": [
+      "通过 Console/带外口登录设备（管理平面已不可用）",
+      "top/display process 定位高占用进程，先尝试 kill 异常进程",
+      "若进程反复拉起或无法定位，在维护窗口重启设备",
+      "重启后核查配置完整性与进程状态，升级到修复版本补丁"
+    ],
+    "historical_case": "2025-09 某防火墙日志进程死循环占满管理核，Console 杀掉后 5 分钟复发，维护窗口重启后恢复，事后升级补丁根治。"
+  },
+  {
+    "id": "KB-NTP-001",
+    "title": "NTP 时钟漂移 / 日志时间戳错位处置预案",
+    "category": "ntp",
+    "action_tool": "fix_ntp_source",
+    "tags": ["NTP", "时钟漂移", "时间戳", "chrony", "ntpd", "日志审计", "时间不同步"],
+    "symptoms": [
+      "系统时钟漂移数十秒，日志时间戳错位",
+      "安全事件关联分析结果失真",
+      "NTP 源不可达或 stratum 异常"
+    ],
+    "remediation_steps": [
+      "检查 ntpq/chronyc 上游源状态与偏移量，确认失效 NTP 源",
+      "修正 /etc/ntp.conf 或设备 ntp server 配置，指向可信时钟源",
+      "启用 chrony makestep 步进校准先一次性对时",
+      "纳入时钟监控，偏移>500ms 告警"
+    ],
+    "historical_case": "2026-01 多台服务器指向已退役 NTP 源，漂移 47 秒导致审计平台无法关联登录日志，更换源并 makestep 后恢复。"
+  },
+  {
+    "id": "KB-OOB-001",
+    "title": "带外管理网络故障（管理 IP 不通 / iDRAC 网关错误）处置预案",
+    "category": "oob",
+    "action_tool": "fix_oob_management",
+    "tags": ["带外", "管理IP", "iDRAC", "管理网关", "管理VLAN", "SNMP采集中断", "监控盲区", "带外管理"],
+    "symptoms": [
+      "带外管理 IP 不通但业务转发正常",
+      "SNMP 采集中断，监控出现盲区",
+      "iDRAC/IMM 网关指向已回收管理网段，时通时断"
+    ],
+    "remediation_steps": [
+      "核查带外管理交换机端口状态与管理 VLAN 配置",
+      "核对 iDRAC/管理口 IP/掩码/网关，修正指向已回收网段的错误网关",
+      "新管理网段纳入 IPAM 管理网台账",
+      "验证 SSH/IPMI/SNMP 采集恢复，补采盲区时段数据"
+    ],
+    "historical_case": "2025-12 机房网段调整后 6 台服务器 iDRAC 网关未更新，带外时通时断，批量修正网关并建立网段变更联动检查。"
+  },
+  {
+    "id": "KB-OSPF-001",
+    "title": "OSPF 邻居频繁震荡处置预案（hello 计时器 / CPU 阈值软配置）",
+    "category": "ospf_soft",
+    "action_tool": "tune_soft_config",
+    "tags": ["OSPF", "邻居震荡", "hello", "dead", "计时器", "CPU阈值", "路由重算", "光模块"],
+    "symptoms": [
+      "OSPF 邻居每 10-15 分钟震荡一次，核心路由反复重算",
+      "hello 报文被丢弃或计时器两端不匹配",
+      "CPU 利用率过高导致协议报文处理超时"
+    ],
+    "remediation_steps": [
+      "优先检查互联光纤与光模块功率/错包（物理层优先）",
+      "检查两端 hello/dead 计时器是否一致，是否被误改过大/过小",
+      "检查 CPU 利用率与阈值告警，协议报文队列是否被挤占",
+      "修正软配置：恢复标准计时器、调整 CPU 阈值与告警门限"
+    ],
+    "historical_case": "2026-02 核心交换机割接后 hello 计时器被改成默认 10 倍，邻居周期性超时，恢复计时器并联动 CPU 阈值告警后稳定。"
+  },
+  {
+    "id": "KB-CFG-ROLLBACK-001",
+    "title": "变更回退误删配置 / 默认路由丢失处置预案",
+    "category": "config_rollback",
+    "action_tool": "rollback_config",
+    "tags": ["回退", "误删", "默认路由", "0.0.0.0/0", "出口中断", "回滚", "配置备份", "rollback"],
+    "symptoms": [
+      "配置回退操作误删默认路由，站点出口流量全部中断",
+      "变更后业务大面积中断，运行配置缺少关键语句",
+      "缺乏变更前后 diff 复核"
+    ],
+    "remediation_steps": [
+      "立即从最近配置备份恢复缺失配置（如默认路由 0.0.0.0/0）",
+      "对比备份与运行配置 diff，逐条确认丢失语句",
+      "恢复后验证出口连通性与路由表",
+      "路由删除/回退操作纳入高危命令管控，强制双人复核与变更前后 diff"
+    ],
+    "historical_case": "2025-08 深圳出口路由器回退脚本误删默认路由，全站断网 18 分钟，从备份恢复路由后业务回切，事后上线高危命令二次确认。"
+  },
+  {
+    "id": "KB-CFG-FIX-001",
+    "title": "端口/协议配置错误处置预案（VLAN 误划 / DHCP Snooping / BGP 泄漏）",
+    "category": "config_fix",
+    "action_tool": "fix_device_config",
+    "tags": ["VLAN", "DHCP Snooping", "trust", "BGP", "路由泄漏", "ACL", "配置错误", "端口配置", "修正"],
+    "symptoms": [
+      "下联端口被误划入错误 VLAN，终端批量失联",
+      "上行口未配 DHCP Snooping trust，Offer 被丢弃终端无法取址",
+      "BGP 误发布全表路由引发路由泄漏，被运营商限制前缀",
+      "临时 ACL 过宽未回收"
+    ],
+    "remediation_steps": [
+      "定位错误配置项（VLAN/trust/route-policy/ACL），与台账/基线比对",
+      "按标准配置修正：恢复正确 VLAN、补配 trust、回收发布策略加 max-prefix、收紧 ACL",
+      "验证终端取址/连通性/路由表，确认业务恢复",
+      "变更强制双人复核，临时配置加过期注释限期回收"
+    ],
+    "historical_case": "2026-04 广州财务专网端口误划 VLAN 200 失联 2 小时，改回 VLAN 100 后恢复；上海接入交换机补 DHCP Snooping trust 后 30 余终端取址正常。"
+  },
+  {
+    "id": "KB-FW-001",
+    "title": "固件升级失败进入 Bootloader 处置预案（参考，需现场）",
+    "category": "firmware",
+    "action_tool": "fix_device_config",
+    "tags": ["固件", "升级失败", "Bootloader", "TFTP", "Console", "镜像恢复"],
+    "symptoms": [
+      "批量升级失败，设备卡在 Bootloader 模式",
+      "业务全部中断，远程不可达"
+    ],
+    "remediation_steps": [
+      "现场 Console 连接，通过 TFTP 重新传输固件镜像",
+      "引导恢复后验证配置完整性（启动配置可能被重置）",
+      "升级前必须备份配置与镜像，分批灰度升级"
+    ],
+    "historical_case": "2025-06 夜间批量升级 4 台接入交换机掉电进 Bootloader，Console+TFTP 恢复，此后升级改为先单台灰度。"
+  }
+]

@@ -1,0 +1,47 @@
+{
+ "baseline_done": true,
+ "incidents": {
+  "35": {
+   "first_seen": "2026-09-05T10:57:19",
+   "last_seen": "2026-09-05T10:57:19",
+   "device": "access-sh-04",
+   "category": "config_fix",
+   "severity": "danger",
+   "summary": "【异常登记】DHCP Snooping误配终端无法取址",
+   "alerted": false,
+   "status": "open"
+  },
+  "34": {
+   "first_seen": "2026-09-05T10:57:19",
+   "last_seen": "2026-09-05T10:57:19",
+   "device": "core-bj-04",
+   "category": "config_fix",
+   "severity": "danger",
+   "summary": "【异常登记】BGP配置错误引发路由泄漏",
+   "alerted": false,
+   "status": "open"
+  },
+  "32": {
+   "first_seen": "2026-09-05T10:57:19",
+   "last_seen": "2026-09-05T10:57:19",
+   "device": "access-gz-01",
+   "category": "config_fix",
+   "severity": "danger",
+   "summary": "【异常登记】端口VLAN划分错误致业务中断",
+   "alerted": false,
+   "status": "open"
+  },
+  "10": {
+   "first_seen": "2026-09-05T10:57:19",
+   "last_seen": "2026-09-05T10:57:19",
+   "device": "access-sh-01",
+   "category": "firmware",
+   "severity": "danger",
+   "summary": "【异常登记】固件升级失败进入Bootloader",
+   "alerted": false,
+   "status": "open"
+  }
+ },
+ "scan_fail_count": 0,
+ "scan_fail_alerted": false
+}
