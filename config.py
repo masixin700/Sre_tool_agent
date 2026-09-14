@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-"""全局配置：NetBox 数据源 / DeepSeek LLM。
-
-DeepSeek API Key 读取顺序：环境变量 DEEPSEEK_API_KEY -> 工作目录 .deepseek_key 文件。
-NetBox Token 启动时用账号密码通过 provision 接口自动获取，无需手工填写。
-"""
+"""全局配置：NetBox 数据源 / DeepSeek LLM。"""
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
