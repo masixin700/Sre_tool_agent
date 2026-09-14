@@ -95,25 +95,96 @@ def deepseek_chat(messages, with_tools=True):
         raise RuntimeError("DeepSeek API 错误 %s: %s" % (e.code, detail[:600]))
 
 
-# ---------------------------------------------------------------- 交互辅助
+# ---------------------------------------------------------------- 权限闸门
+def _deny(args, reason, tool_name, tier=""):
+    """记录审计拒绝并返回 False。"""
+    device = str((args or {}).get("device_id", ""))
+    memory.log_audit(config.OPERATOR, config.OPERATOR_ROLE,
+                     tool_name, args, approved=False, reason=reason,
+                     device=device, tier=tier)
+    return False
+
+
 def confirm_action(name, args):
-    """处置层动作二次确认。"""
-    layer = tools.TOOL_LAYER[name]
-    if layer != "action" or name in tools.AUTO_SAFE_TOOLS:
+    """四维度权限闸门：身份 → 设备 → 动作风险分级 → 人工确认。"""
+    layer = tools.TOOL_LAYER.get(name, "?")
+    if layer != "action":
+        return True  # 非处置层不拦截
+
+    tier = config.get_action_tier(name)
+
+    # ① 维度 1：动作是否被禁止
+    if tier == "blocked":
+        print("    ✖ 动作 %s 已被策略禁止（AGENT_BLOCKED_ACTIONS）" % name)
+        return _deny(args, "动作被策略禁止", name, tier)
+
+    # ② 维度 3：角色权限检查
+    if not config.role_can_execute(name):
+        print("    ✖ 角色 %s 无权执行 %s（风险层级 %s 超出权限）"
+              % (config.OPERATOR_ROLE, name, tier))
+        return _deny(args, "角色权限不足", name, tier)
+
+    # ③ 维度 2：设备级权限检查（回滚工具不需要指定设备，跳过）
+    device_id = (args or {}).get("device_id")
+    if device_id is not None and name != "rollback_last_action":
+        denied = tools.check_device_permission(device_id, name)
+        if denied:
+            print("    ✖ 设备权限拒绝：%s" % denied["reason"])
+            return _deny(args, denied["reason"], name, tier)
+
+    # ④ 维度 1：风险分级确认
+    # tier-1 auto_safe：自动放行
+    if tier == "auto_safe":
         return True
+
+    # tier-3 always_confirm：任何模式都必须人工确认
+    if tier == "always_confirm":
+        print("\n" + "=" * 68)
+        print("⚠️  【高风险·必须人工确认】")
+        print("    工具：%s（风险层级：始终需确认）" % name)
+        print("    参数：%s" % json.dumps(args, ensure_ascii=False))
+        print("=" * 68)
+        if config.AUTO_CONFIRM:
+            print("    （AUTO_CONFIRM=1 自动放行 — 请确保仅在演练/开发环境使用）")
+            memory.log_audit(config.OPERATOR, config.OPERATOR_ROLE,
+                             name, args, approved=True,
+                             reason="auto_confirm tier3", tier=tier)
+            return True
+        try:
+            ans = input("    确认执行请输入 yes，取消请输入 no > ").strip().lower()
+        except EOFError:
+            memory.log_audit(config.OPERATOR, config.OPERATOR_ROLE,
+                             name, args, approved=False, reason="EOF", tier=tier)
+            return False
+        approved = ans in ("yes", "y", "是")
+        memory.log_audit(config.OPERATOR, config.OPERATOR_ROLE,
+                         name, args, approved=approved,
+                         reason="人工确认" if approved else "用户取消", tier=tier)
+        return approved
+
+    # tier-2 needs_confirm：交互模式弹确认 / 自动模式放行
     print("\n" + "=" * 68)
-    print("⚠️  高危处置动作，需要二次确认")
-    print("    工具：%s" % name)
+    print("⚠️  处置动作，需要确认")
+    print("    工具：%s（风险层级：需确认）" % name)
     print("    参数：%s" % json.dumps(args, ensure_ascii=False))
     print("=" * 68)
     if config.AUTO_CONFIRM:
-        print("    （AGENT_AUTO_CONFIRM=1，自动确认）")
+        print("    （AUTO_CONFIRM=1，自动确认）")
+        memory.log_audit(config.OPERATOR, config.OPERATOR_ROLE,
+                         name, args, approved=True,
+                         reason="auto_confirm tier2", tier=tier)
         return True
     try:
         ans = input("    确认执行请输入 yes，取消请输入 no > ").strip().lower()
     except EOFError:
+        memory.log_audit(config.OPERATOR, config.OPERATOR_ROLE,
+                         name, args, approved=False, reason="EOF", tier=tier)
         return False
-    return ans in ("yes", "y", "是")
+    approved = ans in ("yes", "y", "是")
+    memory.log_audit(config.OPERATOR, config.OPERATOR_ROLE,
+                     name, args, approved=approved,
+                     reason="人工确认" if approved else "用户取消", tier=tier)
+    return approved
 
 
 def tool_result(obj):
@@ -229,12 +300,36 @@ def execute_action_with_verification(name, args, state):
 STAGE_DETECT, STAGE_DIAGNOSE, STAGE_ACT, STAGE_DONE = "DETECT", "DIAGNOSE", "ACT", "DONE"
 
 
+def print_policy_summary():
+    """启动时打印当前权限策略摘要，防止误连生产。"""
+    tier_cn = {"auto_safe": "自动放行", "needs_confirm": "需确认",
+               "always_confirm": "始终需确认", "blocked": "禁止"}
+    core_block = "是" if config.get_env_policy("block_core_devices") else "否"
+    roles = config.ALLOWED_DEVICE_ROLES or ["不限"]
+    sites = config.ALLOWED_SITES or ["不限"]
+    blocked = config.ACTION_TIERS["blocked"] or ["无"]
+    print("═══ 权限策略摘要 ═══")
+    print("  环境：%s | 操作人：%s（%s）" % (config.ENVIRONMENT.upper(),
+                                          config.OPERATOR, config.OPERATOR_ROLE))
+    print("  设备角色范围：%s | 站点范围：%s | 核心设备保护：%s"
+          % (", ".join(roles), ", ".join(sites), core_block))
+    print("  风险分级：")
+    for t in ("auto_safe", "needs_confirm", "always_confirm", "blocked"):
+        tools_list = sorted(config.ACTION_TIERS[t]) if config.ACTION_TIERS[t] else ["无"]
+        print("    %s（%s）：%s" % (t, tier_cn[t], ", ".join(tools_list)))
+    print("  自动确认：%s | 自动处置：%s"
+          % ("开" if config.AUTO_CONFIRM else "关",
+             "开" if config.WATCH_AUTO_REMEDIATE else "关"))
+    print("════════════════════")
+
+
 def run(user_input):
     if not config.DEEPSEEK_API_KEY:
         print("❌ 未配置 DeepSeek API Key：请 export DEEPSEEK_API_KEY=sk-xxx "
               "或写入 .deepseek_key 文件")
         return
 
+    print_policy_summary()
     print("🔌 连接 NetBox %s ..." % config.NETBOX_URL)
     nb.login()
 
@@ -341,6 +436,7 @@ def repl():
     print("  数据源：%s  账号：%s" % (config.NETBOX_URL, config.NETBOX_USER))
     print("  输入故障描述开始；输入 quit 退出")
     print("=" * 68)
+    print_policy_summary()
     while True:
         try:
             q = input("\n👤 > ").strip()

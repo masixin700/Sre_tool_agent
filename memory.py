@@ -25,6 +25,7 @@ log = logging.getLogger("memory")
 
 SESSION_DIR = os.path.join(config.MEMORY_DIR, "sessions")
 EXPERIENCES_FILE = os.path.join(config.MEMORY_DIR, "experiences.jsonl")
+AUDIT_FILE = os.path.join(config.MEMORY_DIR, "audit.jsonl")
 
 # 事件/结果落盘时的截断长度，防止 JSONL 膨胀
 _MAX_ARG = 800
@@ -218,3 +219,34 @@ def search_experiences(query, top_k=None):
             "device": exp.get("device"),
         })
     return cases
+
+
+# ============================================================================
+# 审计日志：权限决策记录
+# ============================================================================
+
+def log_audit(operator, role, tool, args, approved, reason="", device="", tier=""):
+    """记录一次权限决策到 audit.jsonl。
+
+    每次处置层动作的确认/拒绝/拦截都会落盘，用于安全审计与事后追责。
+    """
+    if not _enabled():
+        return
+    try:
+        record = {
+            "ts": _now_iso(),
+            "operator": operator,
+            "role": role,
+            "tool": tool,
+            "device": device or str((args or {}).get("device_id", "")),
+            "args": _truncate(args or {}, _MAX_ARG),
+            "approved": approved,        # True=放行 / False=拒绝
+            "tier": tier,                # auto_safe/needs_confirm/always_confirm/blocked
+            "reason": reason,            # 拒绝原因 / 确认理由
+            "env": config.ENVIRONMENT,
+        }
+        _append_jsonl(AUDIT_FILE, record)
+        log.info("审计记录：operator=%s tool=%s approved=%s tier=%s",
+                 operator, tool, approved, tier)
+    except Exception as e:
+        log.warning("log_audit 失败: %s", e)

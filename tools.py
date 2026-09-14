@@ -26,6 +26,7 @@
 import datetime
 import logging
 
+import config
 from netbox_client import nb, NetBoxError
 from knowledge_base import kb
 import external_kb
@@ -108,6 +109,37 @@ def resolve_device(identifier):
     if not res.get("results"):
         raise NetBoxError("未找到设备: %s" % identifier)
     return res["results"][0]
+
+
+def check_device_permission(device_id, tool_name):
+    """设备级权限检查（维度 2）。返回 None 表示通过，返回 dict 表示拒绝。"""
+    dev = resolve_device(device_id)
+    name = dev["name"]
+    role = ((dev.get("role") or {}).get("name", "") or "").lower()
+    role_slug = ((dev.get("role") or {}).get("slug", "") or "").lower()
+    site = (dev.get("site") or {}).get("name", "") or ""
+
+    # 1) 黑名单（最高优先级）
+    if name in config.BLOCKED_DEVICES:
+        return {"denied": True, "reason": "设备 %s 在黑名单中（AGENT_BLOCKED_DEVICES）" % name}
+
+    # 2) 核心设备保护（受环境策略控制，用 slug 大小写不敏感匹配）
+    if config.get_env_policy("block_core_devices", False) and role_slug in config.CORE_DEVICE_ROLES:
+        if tool_name not in config.ACTION_TIERS["auto_safe"]:
+            return {"denied": True,
+                    "reason": "核心设备 %s（角色 %s）禁止自动处置，仅允许安全回滚操作" % (name, role_slug)}
+
+    # 3) 允许的设备角色（大小写不敏感）
+    if config.ALLOWED_DEVICE_ROLES and role not in [r.lower() for r in config.ALLOWED_DEVICE_ROLES]:
+        return {"denied": True,
+                "reason": "设备角色 %s 不在允许列表 %s 中" % (role, config.ALLOWED_DEVICE_ROLES)}
+
+    # 4) 允许的站点
+    if config.ALLOWED_SITES and site not in config.ALLOWED_SITES:
+        return {"denied": True,
+                "reason": "设备站点 %s 不在允许列表 %s 中" % (site, config.ALLOWED_SITES)}
+
+    return None  # 检查通过
 
 
 def add_journal(device_id, kind, comments):

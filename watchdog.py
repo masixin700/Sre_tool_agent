@@ -186,14 +186,22 @@ def scan_once(state=None):
 
 
 def _auto_remediate(inc):
-    """对新异常自动启动 Agent 三阶段处置。成功跑完返回 True（是否闭环由复验决定）。"""
+    """对新异常自动启动 Agent 三阶段处置。成功跑完返回 True（是否闭环由复验决定）。
+
+    风险分级策略：watchdog 无 TTY，按环境策略决定 AUTO_CONFIRM：
+      - dev 环境：tier-1/2 自动放行，tier-3（关端口/重启）也自动放行（需明确开启 WATCH_AUTO_REMEDIATE）
+      - staging/prod 环境：仅 tier-1（auto_safe）自动放行，tier-2/3 需人工确认 → 无 TTY 时自动拒绝
+    """
     try:
         import agent
-        config.AUTO_CONFIRM = True  # 守护进程无 TTY，自动确认（高危操作的自动处置需明确开启本开关）
+        # watchdog 无 TTY：dev 环境可自动确认全部；staging/prod 仅放行 auto_safe
+        env_auto = config.get_env_policy("auto_confirm", False)
+        config.AUTO_CONFIRM = env_auto
         prompt = ("[巡逻自动发现] 设备 %s 发生异常：%s（severity=%s，category=%s）。"
                   "请严格按三阶段流程：先检索知识库与历史经验，再诊断，最后在确认动作合理后处置并闭环。"
                   % (inc["device"], inc["summary"][:120], inc["severity"], inc["category"]))
-        log.info("🤖 启动自动处置：%s（category=%s）", inc["device"], inc["category"])
+        log.info("🤖 启动自动处置：%s（category=%s，env=%s，auto_confirm=%s）",
+                 inc["device"], inc["category"], config.ENVIRONMENT, env_auto)
         agent.run(prompt)
         return True
     except Exception as e:
@@ -215,8 +223,8 @@ def main():
                  len(r["new"]), len(r["recovered"]))
         return
 
-    log.info("=== 巡逻器启动：间隔 %ds，级别=%s，自动处置=%s，IM渠道=%s ===",
-             config.WATCH_INTERVAL, config.WATCH_SEVERITY,
+    log.info("=== 巡逻器启动：env=%s，间隔 %ds，级别=%s，自动处置=%s，IM渠道=%s ===",
+             config.ENVIRONMENT, config.WATCH_INTERVAL, config.WATCH_SEVERITY,
              "开" if config.WATCH_AUTO_REMEDIATE else "关",
              notifier.configured_channels() or "未配置")
     while True:

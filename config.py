@@ -44,6 +44,114 @@ DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 AUTO_CONFIRM = os.getenv("AGENT_AUTO_CONFIRM", "0") == "1"   # 处置层动作是否免确认（仅演示用）
 MAX_ACTION_ATTEMPTS = int(os.getenv("AGENT_MAX_ATTEMPTS", "3"))  # 同一异常最多处置尝试次数
 
+# ---- 权限控制：维度 4 环境隔离 ----
+# dev / staging / prod；不同环境有不同的默认策略组合
+ENVIRONMENT = os.getenv("AGENT_ENV", "dev").strip().lower()
+
+# ---- 权限控制：维度 3 身份/角色 ----
+# viewer: 只能跑感知/分析层，处置层全部拦截
+# operator: 可执行 tier-1/tier-2 动作，tier-3 仍需人工确认
+# admin: 全权限（tier-3 仍需确认，但可用 --force-admin 跳过）
+OPERATOR = os.getenv("AGENT_OPERATOR", "anonymous").strip()
+OPERATOR_ROLE = os.getenv("AGENT_OPERATOR_ROLE", "admin").strip().lower()
+
+# ---- 权限控制：维度 1 动作风险分级 ----
+# tier-1（auto_safe）: 方向安全，自动放行（回滚/防护/软配置）
+# tier-2（needs_confirm）: 中风险，交互模式弹确认 / watchdog 模式看 AUTO_CONFIRM
+# tier-3（always_confirm）: 高风险，任何模式都必须人工输入 yes（关端口/重启设备）
+ACTION_TIERS = {
+    "auto_safe": {
+        "rollback_last_action",
+        "deploy_loop_protection",
+        "tune_soft_config",
+    },
+    "needs_confirm": {
+        "fix_ntp_source",
+        "fix_oob_management",
+        "adjust_buffer_queue",
+        "fix_device_config",
+        "rollback_config",
+    },
+    "always_confirm": {
+        "shutdown_loop_port",
+        "troubleshoot_process_restart",
+    },
+    "blocked": set(),  # 完全禁止的动作（按需用环境变量配置）
+}
+# 环境变量覆盖：AGENT_BLOCKED_ACTIONS=shutdown_loop_port,troubleshoot_process_restart
+_blocked_env = os.getenv("AGENT_BLOCKED_ACTIONS", "").strip()
+if _blocked_env:
+    ACTION_TIERS["blocked"] = {a.strip() for a in _blocked_env.split(",") if a.strip()}
+
+# 角色权限矩阵：角色 → 允许的最高风险层级
+# viewer 只能感知/分析；operator 可到 tier-2；admin 可到 tier-3
+ROLE_MAX_TIER = {
+    "viewer": None,       # 不允许任何处置层动作
+    "operator": "needs_confirm",
+    "admin": "always_confirm",
+}
+
+# ---- 权限控制：维度 2 设备边界 ----
+# 允许操作的设备角色（逗号分隔），空 = 不限制
+ALLOWED_DEVICE_ROLES = [r.strip() for r in os.getenv("AGENT_ALLOWED_ROLES", "").split(",") if r.strip()]
+# 允许操作的站点（逗号分隔），空 = 不限制
+ALLOWED_SITES = [s.strip() for s in os.getenv("AGENT_ALLOWED_SITES", "").split(",") if s.strip()]
+# 设备黑名单（逗号分隔设备名），优先级最高
+BLOCKED_DEVICES = [d.strip() for d in os.getenv("AGENT_BLOCKED_DEVICES", "").split(",") if d.strip()]
+# 核心设备角色（slug，小写）：即使允许列表包含，也禁止自动处置（仅允许回滚）
+CORE_DEVICE_ROLES = {"core", "firewall", "edge"}
+
+# 环境策略组合
+ENV_POLICIES = {
+    "dev": {
+        "auto_confirm": True,
+        "watch_auto_remediate": True,
+        "block_core_devices": False,
+    },
+    "staging": {
+        "auto_confirm": False,
+        "watch_auto_remediate": False,
+        "block_core_devices": True,
+    },
+    "prod": {
+        "auto_confirm": False,
+        "watch_auto_remediate": False,
+        "block_core_devices": True,
+    },
+}
+
+
+def get_env_policy(key, default=None):
+    """获取当前环境的策略值。"""
+    return ENV_POLICIES.get(ENVIRONMENT, {}).get(key, default)
+
+
+def get_action_tier(tool_name):
+    """返回工具的风险层级：auto_safe / needs_confirm / always_confirm / blocked / None。"""
+    if tool_name in ACTION_TIERS["blocked"]:
+        return "blocked"
+    if tool_name in ACTION_TIERS["always_confirm"]:
+        return "always_confirm"
+    if tool_name in ACTION_TIERS["needs_confirm"]:
+        return "needs_confirm"
+    if tool_name in ACTION_TIERS["auto_safe"]:
+        return "auto_safe"
+    return None
+
+
+def role_can_execute(tool_name):
+    """角色是否有权限执行该工具（基于风险层级上限）。"""
+    max_tier = ROLE_MAX_TIER.get(OPERATOR_ROLE)
+    if max_tier is None:
+        return False  # viewer 不允许任何处置动作
+    tier = get_action_tier(tool_name)
+    if tier == "blocked":
+        return False
+    if tier is None:
+        return True  # 非处置层工具
+    order = {"auto_safe": 1, "needs_confirm": 2, "always_confirm": 3}
+    return order.get(tier, 0) <= order.get(max_tier, 0)
+
 # ---- 知识库 ----
 KB_PATH = os.path.join(BASE_DIR, "data", "kb_docs.json")  # 本地预案库（兜底数据源）
 
