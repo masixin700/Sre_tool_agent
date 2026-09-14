@@ -1,19 +1,4 @@
 # -*- coding: utf-8 -*-
-"""SRE Tool-Calling Agent（DeepSeek function calling + 三阶段状态机）。
-
-用法：
-  export DEEPSEEK_API_KEY=sk-xxxx          # 或把 key 写入工作目录 .deepseek_key
-  python3 agent.py "access-bj-02 疑似环路，终端大面积掉线"
-  python3 agent.py                          # 交互模式
-  AGENT_AUTO_CONFIRM=1 python3 agent.py ... # 跳过二次确认（仅演示/测试）
-
-状态机：
-  阶段一 DETECT  发现异常 → 强制感知 + search_knowledge_base，禁止直接回答
-  阶段二 DIAGNOSE 基于历史预案/变更关联给出诊断与处置建议
-  阶段三 ACT     处置工具 → 二次确认 → 执行 → verify 复验
-                 ├─ 恢复：close_incident_loop → "闭环完成"
-                 └─ 未恢复：自动 rollback_last_action → 回到阶段二（限次后转人工）
-"""
 import json
 import logging
 import sys
