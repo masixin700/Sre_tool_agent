@@ -1,6 +1,4 @@
 # Sre_tool_agent
-
-"""
 用法：
   export DEEPSEEK_API_KEY=sk-xxxx          # 或把 key 写入工作目录 .deepseek_key
   python3 agent.py "access-bj-02 疑似环路，终端大面积掉线"
@@ -13,12 +11,10 @@
   阶段三 ACT     处置工具 → 二次确认 → 执行 → verify 复验
                  ├─ 恢复：close_incident_loop → "闭环完成"
                  └─ 未恢复：自动 rollback_last_action → 回到阶段二（限次后转人工）
-"""
 
 
 
-"""三层工具栈（Tool Stack）实现，数据面为 NetBox（localhost:8000）。
-
+"""四层工具栈（Tool Stack）实现，数据面为 NetBox（localhost:8000）。
 感知层 Perception（只读 GET）：
   - list_active_incidents      拉取当前未闭环异常（journal 异常登记）
   - get_device_detail          设备详情/状态
@@ -42,6 +38,31 @@
   - rollback_last_action       回滚工具：按快照撤销最近一次处置动作
 
 通知层 Notify 对外推送 / 只读外部副作用、不改变 NetBox 状态）
-  - send_notification 通过钉钉/飞书/企微群机器人推送消息（异常告警、人工确认/升级、闭环通报）。
-    
+  - send_notification 通过钉钉/飞书/企微群机器人推送消息（异常告警、人工确认/升级、闭环通报）。  
 """
+整体权限流转图：
+① 身份检查：OPERATOR_ROLE 能不能调这类工具？
+   ├─ viewer → 直接拒绝
+   └─ operator/admin → 继续
+  │
+  ▼
+② 设备检查：这台设备允许操作吗？
+   ├─ 在黑名单 / 核心设备 → 拒绝
+   └─ 在允许范围 → 继续
+  │
+  ▼
+③ 动作检查：这个工具在禁止列表吗？
+   ├─ blocked → 拒绝
+   └─ 允许 → 继续
+  │
+  ▼
+④ 风险分级确认：
+   ├─ tier-1 auto_safe → 自动放行（回滚/防护/软配置）
+   ├─ tier-2 needs_confirm → 交互模式弹 yes/no / watchdog 模式 IM 确认
+   └─ tier-3 always_confirm → 任何模式都必须人输 yes（关端口/重启）
+  │
+  ▼
+⑤ 审计记录：谁、什么角色、什么时候、对哪台设备、用了什么工具、确认了没有
+  │
+  ▼
+⑥ 执行 → 快照 → 复验 → 闭环/回滚
