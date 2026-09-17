@@ -25,7 +25,7 @@ if os.uname().sysname == "Darwin":
 # ---- NetBox（数据源 / 处置对象）----
 NETBOX_URL = os.getenv("NETBOX_URL", "http://localhost:8000")
 NETBOX_USER = os.getenv("NETBOX_USER", "admin")
-NETBOX_PASSWORD = os.getenv("NETBOX_PASSWORD", "12345678")
+NETBOX_PASSWORD = os.getenv("NETBOX_PASSWORD", "*******")
 
 # ---- DeepSeek（LLM，OpenAI 兼容协议）----
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
